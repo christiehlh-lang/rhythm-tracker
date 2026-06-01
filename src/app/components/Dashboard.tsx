@@ -1,4 +1,5 @@
 import { Circle, Calendar, Brain, Timer, Moon, TrendingUp } from "lucide-react";
+import { useLocalStorage, STORAGE_KEYS, type DailyEntry } from "../../store";
 
 export function Dashboard() {
   const today = new Date().toLocaleDateString("en-US", {
@@ -8,6 +9,21 @@ export function Dashboard() {
   });
 
   const currentPhase = getMoonPhase(new Date());
+
+  const [entries] = useLocalStorage<Record<string, DailyEntry>>(STORAGE_KEYS.daily, {});
+  const weekEntries = Array.from({ length: 7 })
+    .map((_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      return entries[d.toISOString().split("T")[0]];
+    })
+    .filter(Boolean) as DailyEntry[];
+  const avg = (key: "energy" | "mood") =>
+    weekEntries.length
+      ? Math.round(weekEntries.reduce((s, e) => s + e[key], 0) / weekEntries.length)
+      : 0;
+  const avgEnergy = avg("energy");
+  const avgMood = avg("mood");
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-8">
@@ -92,21 +108,30 @@ export function Dashboard() {
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Average Energy</span>
               <div className="flex gap-1">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="w-2 h-6 bg-primary rounded-sm" />
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div
+                    key={i}
+                    className={`w-2 h-6 rounded-sm ${i <= avgEnergy ? "bg-primary" : "bg-muted"}`}
+                  />
                 ))}
-                <div className="w-2 h-6 bg-muted rounded-sm" />
               </div>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Average Mood</span>
               <div className="flex gap-1">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="w-2 h-6 bg-secondary rounded-sm" />
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <div
+                    key={i}
+                    className={`w-2 h-6 rounded-sm ${i <= avgMood ? "bg-secondary" : "bg-muted"}`}
+                  />
                 ))}
-                <div className="w-2 h-6 bg-muted rounded-sm" />
               </div>
             </div>
+            {weekEntries.length === 0 && (
+              <p className="text-xs text-muted-foreground italic pt-2">
+                No check-ins yet this week.
+              </p>
+            )}
           </div>
         </div>
 

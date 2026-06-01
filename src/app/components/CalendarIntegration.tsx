@@ -1,134 +1,146 @@
 import { useState } from "react";
-import { Upload, Calendar as CalendarIcon, Link as LinkIcon, CheckCircle2 } from "lucide-react";
+import { Upload, CheckCircle2, AlertCircle, Trash2 } from "lucide-react";
+import { useLocalStorage, STORAGE_KEYS, type CalendarEvent } from "../../store";
+import { parseIcs } from "../../utils/ics";
+
+type Status =
+  | { kind: "idle" }
+  | { kind: "busy"; message: string }
+  | { kind: "ok"; message: string }
+  | { kind: "error"; message: string };
 
 export function CalendarIntegration() {
-  const [connected, setConnected] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [events, setEvents] = useLocalStorage<CalendarEvent[]>(STORAGE_KEYS.events, []);
+  const [status, setStatus] = useState<Status>({ kind: "idle" });
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setUploading(true);
-      setTimeout(() => {
-        setUploading(false);
-        setConnected(true);
-      }, 1500);
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const name = file.name.toLowerCase();
+    setStatus({ kind: "busy", message: "Reading file…" });
+    try {
+      let next: CalendarEvent[];
+      if (name.endsWith(".ics") || file.type === "text/calendar") {
+        const text = await file.text();
+        const parsed = parseIcs(text);
+        if (!parsed.length) throw new Error("No events found in ICS");
+        next = parsed.map((p) => ({
+          id: `ics-${p.uid}`,
+          source: "ics" as const,
+          title: p.title,
+          start: p.start,
+          end: p.end,
+          allDay: p.allDay,
+        }));
+      } else if (name.endsWith(".pdf") || file.type === "application/pdf") {
+        setStatus({ kind: "busy", message: "Loading PDF parser…" });
+        const { extractPdfEvents } = await import("../../utils/pdf");
+        setStatus({ kind: "busy", message: "Extracting events from PDF…" });
+        const extracted = await extractPdfEvents(file);
+        if (!extracted.length) {
+          throw new Error(
+            "Couldn't find any dated entries in this PDF. Try a clearer schedule or use an ICS export.",
+          );
+        }
+        next = extracted.map((p) => ({
+          id: p.uid,
+          source: "ics" as const, // bucket under same source for now
+          title: p.title,
+          start: p.start,
+          end: p.end,
+          allDay: p.allDay,
+        }));
+      } else {
+        throw new Error("Unsupported file type — upload .ics or .pdf");
+      }
+      setEvents(next);
+      setStatus({ kind: "ok", message: `Imported ${next.length} events from ${file.name}` });
+    } catch (err) {
+      setStatus({ kind: "error", message: (err as Error).message });
+    } finally {
+      e.target.value = "";
     }
   };
 
+  const clearAll = () => {
+    setEvents([]);
+    setStatus({ kind: "idle" });
+  };
+
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-8">
+    <div className="w-full max-w-3xl mx-auto space-y-8">
       <div className="text-center space-y-2">
         <h2 className="text-3xl">Calendar Integration</h2>
         <p className="text-muted-foreground">
-          Connect your schedule to see how it aligns with your rhythm
+          Upload a calendar export to see your schedule alongside your rhythm
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-card p-6 rounded-2xl shadow-sm border border-border hover:border-primary/30 transition-colors">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-              <LinkIcon className="w-5 h-5 text-primary" />
-            </div>
-            <h3>Connect Notion</h3>
-          </div>
-          <p className="text-sm text-muted-foreground mb-6">
-            Sync your Notion calendar to track commitments alongside your energy levels
-          </p>
-          <button
-            onClick={() => setConnected(true)}
-            className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-all"
-          >
-            {connected ? (
-              <span className="flex items-center justify-center gap-2">
-                <CheckCircle2 className="w-4 h-4" />
-                Connected
-              </span>
-            ) : (
-              "Connect Notion"
-            )}
-          </button>
+      <div className="bg-card p-8 rounded-2xl shadow-sm border border-border space-y-6">
+        <div className="flex items-center gap-3">
+          <Upload className="w-6 h-6 text-primary" />
+          <h3 className="text-xl">Upload schedule</h3>
         </div>
 
-        <div className="bg-card p-6 rounded-2xl shadow-sm border border-border hover:border-primary/30 transition-colors">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-secondary/30 flex items-center justify-center">
-              <CalendarIcon className="w-5 h-5 text-secondary" />
-            </div>
-            <h3>External Calendar</h3>
-          </div>
-          <p className="text-sm text-muted-foreground mb-6">
-            Connect Google Calendar, Outlook, or any calendar that supports .ics export
-          </p>
-          <button className="w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-xl hover:bg-secondary/80 transition-all">
-            Connect Calendar
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-card p-8 rounded-2xl shadow-sm border border-border">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-full bg-accent/30 flex items-center justify-center">
-            <Upload className="w-5 h-5 text-accent" />
-          </div>
-          <h3>Upload Files</h3>
-        </div>
-
-        <p className="text-sm text-muted-foreground mb-6">
-          Upload your schedule as an .ics file or PDF to import events
+        <p className="text-sm text-muted-foreground">
+          Drop in a <code>.ics</code> file (exported from Apple Calendar, Google Calendar,
+          Outlook, Notion, etc.) or a <code>.pdf</code> schedule. Everything is parsed locally —
+          nothing leaves your device.
         </p>
 
-        <div className="border-2 border-dashed border-border rounded-xl p-12 text-center hover:border-primary/50 transition-colors">
+        <label className="block">
           <input
             type="file"
-            accept=".ics,.pdf"
-            onChange={handleFileUpload}
-            className="hidden"
-            id="file-upload"
+            accept=".ics,.pdf,text/calendar,application/pdf"
+            onChange={handleFile}
+            className="block w-full text-sm file:mr-4 file:py-3 file:px-5 file:rounded-xl file:border-0 file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 file:cursor-pointer"
           />
-          <label htmlFor="file-upload" className="cursor-pointer">
-            <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            {uploading ? (
-              <p className="text-sm text-muted-foreground">Uploading...</p>
-            ) : (
-              <>
-                <p className="text-sm mb-2">Drop your .ics or PDF file here</p>
-                <p className="text-xs text-muted-foreground">or click to browse</p>
-              </>
-            )}
-          </label>
+        </label>
+
+        <StatusLine status={status} />
+
+        <div className="p-4 rounded-xl bg-muted/50 text-xs text-muted-foreground space-y-1">
+          <p className="font-medium text-foreground/80">A note on PDF extraction</p>
+          <p>
+            PDFs have no standard event format, so extraction is best-effort: we scan for dates
+            (Jan 5, 2026 / 01/05/26 / 2026-01-05) and optional times on each line. Itineraries
+            and printed schedules usually work; heavily designed layouts may miss entries. For
+            full fidelity, export an .ics whenever possible.
+          </p>
         </div>
 
-        {connected && (
-          <div className="mt-6 p-4 bg-primary/10 rounded-xl border border-primary/20">
-            <p className="text-sm text-foreground/80 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-primary" />
-              Your calendar has been imported. Events will now appear in your rhythm view.
-            </p>
+        {events.length > 0 && (
+          <div className="flex items-center justify-between text-sm pt-4 border-t border-border">
+            <span className="text-muted-foreground">
+              {events.length} events stored — open the Calendar tab to view
+            </span>
+            <button
+              onClick={clearAll}
+              className="flex items-center gap-1 text-muted-foreground hover:text-destructive transition-colors"
+            >
+              <Trash2 className="w-3 h-3" />
+              Clear all
+            </button>
           </div>
         )}
       </div>
-
-      <div className="bg-muted/50 p-6 rounded-2xl border border-border">
-        <h4 className="text-sm font-medium mb-3">Why connect your calendar?</h4>
-        <ul className="space-y-2 text-sm text-muted-foreground">
-          <li className="flex items-start gap-2">
-            <span className="text-primary mt-1">•</span>
-            <span>See how your scheduled commitments align with your natural energy patterns</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-primary mt-1">•</span>
-            <span>Notice when you're scheduling against your rhythm and adjust accordingly</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-primary mt-1">•</span>
-            <span>
-              Build a practice of honoring both your commitments and your body's needs
-            </span>
-          </li>
-        </ul>
-      </div>
     </div>
+  );
+}
+
+function StatusLine({ status }: { status: Status }) {
+  if (status.kind === "idle") return null;
+  const tone =
+    status.kind === "error"
+      ? "text-destructive"
+      : status.kind === "ok"
+        ? "text-primary"
+        : "text-muted-foreground";
+  const Icon = status.kind === "error" ? AlertCircle : status.kind === "ok" ? CheckCircle2 : null;
+  return (
+    <p className={`flex items-center gap-2 text-sm ${tone}`}>
+      {Icon && <Icon className="w-4 h-4 flex-shrink-0" />}
+      <span>{status.message}</span>
+    </p>
   );
 }

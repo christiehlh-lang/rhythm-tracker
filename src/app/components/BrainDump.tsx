@@ -1,34 +1,29 @@
 import { useState } from "react";
 import { Plus, X, ChevronDown } from "lucide-react";
 import { motion } from "motion/react";
-
-interface DumpEntry {
-  id: string;
-  content: string;
-  timestamp: Date;
-}
+import { useLocalStorage, STORAGE_KEYS, type DumpEntry } from "../../store";
 
 export function BrainDump() {
-  const [entries, setEntries] = useState<DumpEntry[]>([]);
+  const [entries, setEntries] = useLocalStorage<DumpEntry[]>(STORAGE_KEYS.dumps, []);
   const [currentDump, setCurrentDump] = useState("");
   const [showPrevious, setShowPrevious] = useState(false);
 
   const addEntry = () => {
     if (currentDump.trim()) {
-      setEntries([
+      setEntries((prev) => [
         {
           id: Date.now().toString(),
           content: currentDump,
-          timestamp: new Date(),
+          timestamp: new Date().toISOString(),
         },
-        ...entries,
+        ...prev,
       ]);
       setCurrentDump("");
     }
   };
 
   const deleteEntry = (id: string) => {
-    setEntries(entries.filter((entry) => entry.id !== id));
+    setEntries((prev) => prev.filter((entry) => entry.id !== id));
   };
 
   return (
@@ -93,7 +88,7 @@ export function BrainDump() {
                   <div className="flex justify-between items-start gap-4">
                     <div className="flex-1">
                       <p className="text-sm text-muted-foreground mb-2">
-                        {entry.timestamp.toLocaleDateString("en-US", {
+                        {new Date(entry.timestamp).toLocaleDateString("en-US", {
                           month: "short",
                           day: "numeric",
                           hour: "numeric",
