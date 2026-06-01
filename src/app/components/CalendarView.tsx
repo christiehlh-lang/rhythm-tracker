@@ -145,17 +145,7 @@ export function CalendarView() {
                     key={ev.id}
                     className="flex items-start gap-3 p-3 rounded-lg bg-background border border-border"
                   >
-                    <span
-                      className="mt-1 w-2 h-2 rounded-full flex-shrink-0"
-                      style={{
-                        backgroundColor:
-                          ev.source === "google"
-                            ? "#9fa891"
-                            : ev.source === "notion"
-                              ? "#b8a99a"
-                              : "#d4a59a",
-                      }}
-                    />
+                    <span className="mt-1 w-2 h-2 rounded-full flex-shrink-0 bg-primary" />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm">{ev.title}</p>
                       <p className="text-xs text-muted-foreground">
@@ -165,8 +155,6 @@ export function CalendarView() {
                               hour: "numeric",
                               minute: "2-digit",
                             })}
-                        {" · "}
-                        {ev.source}
                       </p>
                     </div>
                   </li>

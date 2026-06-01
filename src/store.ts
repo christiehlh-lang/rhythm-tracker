@@ -52,16 +52,11 @@ export interface CycleSettings {
 
 export interface CalendarEvent {
   id: string;
-  source: "ics" | "google" | "notion";
+  source: "ics";
   title: string;
   start: string; // ISO
   end: string | null;
   allDay: boolean;
-}
-
-export interface NotionConfig {
-  token: string;
-  databaseId: string;
 }
 
 export const STORAGE_KEYS = {
@@ -70,6 +65,4 @@ export const STORAGE_KEYS = {
   tasks: "rhythm.tasks.v1",
   cycle: "rhythm.cycle.v1",
   events: "rhythm.calendarEvents.v1",
-  notion: "rhythm.notionConfig.v1",
-  googleToken: "rhythm.googleToken.v1",
 } as const;
