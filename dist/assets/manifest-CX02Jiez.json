@@ -1,0 +1,48 @@
+{
+  "name": "Your Rhythm - Personal Rhythm Tracker",
+  "short_name": "Your Rhythm",
+  "description": "Track your energy, mood, cycle, and tasks in tune with your natural rhythm",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf9f7",
+  "theme_color": "#d4a59a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["health", "lifestyle", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Today's Check-in",
+      "short_name": "Check-in",
+      "description": "Log your daily energy and mood",
+      "url": "/?tab=today",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Brain Dump",
+      "short_name": "Brain Dump",
+      "description": "Free-form thoughts and notes",
+      "url": "/?tab=brain-dump",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Rhythm Tracker",
+      "short_name": "Rhythm",
+      "description": "Track your cycle and moon phases",
+      "url": "/?tab=rhythm",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
