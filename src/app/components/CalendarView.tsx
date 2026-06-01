@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useLocalStorage, STORAGE_KEYS, type DailyEntry } from "../../store";
 
 export function CalendarView() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [entries] = useLocalStorage<Record<string, DailyEntry>>(STORAGE_KEYS.daily, {});
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -23,14 +25,12 @@ export function CalendarView() {
 
   const { daysInMonth, startingDayOfWeek } = getDaysInMonth(currentMonth);
 
-  const mockEntries: Record<number, { energy: number; hasNotes: boolean }> = {
-    5: { energy: 3, hasNotes: true },
-    8: { energy: 4, hasNotes: false },
-    12: { energy: 5, hasNotes: true },
-    15: { energy: 2, hasNotes: true },
-    18: { energy: 3, hasNotes: false },
-    22: { energy: 4, hasNotes: true },
-    25: { energy: 3, hasNotes: false },
+  const entryForDay = (day: number): { energy: number; hasNotes: boolean } | undefined => {
+    const d = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+    const key = d.toISOString().split("T")[0];
+    const e = entries[key];
+    if (!e) return undefined;
+    return { energy: e.energy, hasNotes: Boolean(e.notes?.trim()) };
   };
 
   const getEnergyColor = (energy: number) => {
@@ -77,7 +77,7 @@ export function CalendarView() {
           ))}
 
           {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
-            const entry = mockEntries[day];
+            const entry = entryForDay(day);
             const isToday =
               day === new Date().getDate() &&
               currentMonth.getMonth() === new Date().getMonth() &&

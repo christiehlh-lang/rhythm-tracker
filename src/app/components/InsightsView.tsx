@@ -1,16 +1,25 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { useLocalStorage, STORAGE_KEYS, type DailyEntry } from "../../store";
 
-const mockData = [
-  { day: "Mon", energy: 3, mood: 4, focus: 3 },
-  { day: "Tue", energy: 4, mood: 4, focus: 4 },
-  { day: "Wed", energy: 5, mood: 5, focus: 5 },
-  { day: "Thu", energy: 4, mood: 3, focus: 4 },
-  { day: "Fri", energy: 3, mood: 3, focus: 3 },
-  { day: "Sat", energy: 2, mood: 2, focus: 2 },
-  { day: "Sun", energy: 3, mood: 3, focus: 3 },
-];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function InsightsView() {
+  const [entries] = useLocalStorage<Record<string, DailyEntry>>(STORAGE_KEYS.daily, {});
+
+  const data = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const key = d.toISOString().split("T")[0];
+    const entry = entries[key];
+    return {
+      day: WEEKDAYS[d.getDay()],
+      energy: entry?.energy ?? null,
+      mood: entry?.mood ?? null,
+      focus: entry?.productivity ?? null,
+    };
+  });
+
+  const hasData = data.some((d) => d.energy !== null);
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
       <h2 className="text-2xl mb-6">Your patterns</h2>
@@ -20,8 +29,13 @@ export function InsightsView() {
         <p className="text-sm text-muted-foreground mb-6">
           Your energy, mood, and focus over the past 7 days
         </p>
+        {!hasData && (
+          <p className="text-sm text-muted-foreground mb-4 italic">
+            No check-ins yet this week — log a day on the Today tab to start seeing your patterns.
+          </p>
+        )}
         <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={mockData}>
+          <LineChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e0d5cc" />
             <XAxis dataKey="day" stroke="#8a8580" />
             <YAxis domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} stroke="#8a8580" />

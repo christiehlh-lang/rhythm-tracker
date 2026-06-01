@@ -1,10 +1,18 @@
 import { useState } from "react";
 import { Moon, ChevronLeft, ChevronRight, Droplets } from "lucide-react";
+import { useLocalStorage, STORAGE_KEYS, type CycleSettings } from "../../store";
 
 export function RhythmTracker() {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [cycleStart, setCycleStart] = useState<Date | null>(null);
-  const [cycleLength, setCycleLength] = useState(28);
+  const [cycle, setCycle] = useLocalStorage<CycleSettings>(STORAGE_KEYS.cycle, {
+    cycleStart: null,
+    cycleLength: 28,
+  });
+  const cycleStart = cycle.cycleStart ? new Date(cycle.cycleStart) : null;
+  const cycleLength = cycle.cycleLength;
+  const setCycleStart = (d: Date | null) =>
+    setCycle((prev) => ({ ...prev, cycleStart: d ? d.toISOString() : null }));
+  const setCycleLength = (n: number) => setCycle((prev) => ({ ...prev, cycleLength: n }));
 
   const navigateMonth = (offset: number) => {
     const newDate = new Date(currentDate);

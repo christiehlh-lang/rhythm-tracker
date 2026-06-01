@@ -1,16 +1,10 @@
 import { useState, useEffect } from "react";
 import { Play, Pause, RotateCcw, Plus, Check, X } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-
-interface Task {
-  id: string;
-  title: string;
-  completed: boolean;
-  timeSpent: number;
-}
+import { useLocalStorage, STORAGE_KEYS, type Task } from "../../store";
 
 export function TaskTimer() {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useLocalStorage<Task[]>(STORAGE_KEYS.tasks, []);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);

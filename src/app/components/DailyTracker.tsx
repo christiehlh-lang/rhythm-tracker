@@ -1,15 +1,6 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Circle } from "lucide-react";
-
-interface DailyEntry {
-  date: string;
-  energy: number;
-  mood: number;
-  productivity: number;
-  flow: "heavy" | "medium" | "light" | "none";
-  symptoms: string[];
-  notes: string;
-}
+import { useLocalStorage, STORAGE_KEYS, type DailyEntry } from "../../store";
 
 const MOOD_LABELS = ["Low", "Calm", "Good", "Great", "Vibrant"];
 const ENERGY_LABELS = ["Resting", "Low", "Steady", "High", "Peak"];
@@ -17,7 +8,7 @@ const PRODUCTIVITY_LABELS = ["Slow", "Gentle", "Flow", "Focused", "Intense"];
 
 export function DailyTracker() {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [entries, setEntries] = useState<Record<string, DailyEntry>>({});
+  const [entries, setEntries] = useLocalStorage<Record<string, DailyEntry>>(STORAGE_KEYS.daily, {});
 
   const dateKey = currentDate.toISOString().split("T")[0];
   const entry = entries[dateKey] || {
@@ -31,10 +22,10 @@ export function DailyTracker() {
   };
 
   const updateEntry = (updates: Partial<DailyEntry>) => {
-    setEntries({
-      ...entries,
+    setEntries((prev) => ({
+      ...prev,
       [dateKey]: { ...entry, ...updates },
-    });
+    }));
   };
 
   const navigateDay = (offset: number) => {
