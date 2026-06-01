@@ -1,19 +1,43 @@
 import { useState } from "react";
-import { Upload, Calendar as CalendarIcon, Link as LinkIcon, CheckCircle2 } from "lucide-react";
+import { Upload, Calendar as CalendarIcon, CheckCircle2, AlertCircle, Trash2 } from "lucide-react";
+import {
+  useLocalStorage,
+  STORAGE_KEYS,
+  type CalendarEvent,
+  type NotionConfig,
+} from "../../store";
+import { parseIcs } from "../../utils/ics";
+import {
+  fetchGoogleEvents,
+  getGoogleClientId,
+  requestGoogleToken,
+} from "../../utils/google";
+
+type Status =
+  | { kind: "idle" }
+  | { kind: "busy"; message: string }
+  | { kind: "ok"; message: string }
+  | { kind: "error"; message: string };
 
 export function CalendarIntegration() {
-  const [connected, setConnected] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [events, setEvents] = useLocalStorage<CalendarEvent[]>(STORAGE_KEYS.events, []);
+  const [notion, setNotion] = useLocalStorage<NotionConfig>(STORAGE_KEYS.notion, {
+    token: "",
+    databaseId: "",
+  });
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setUploading(true);
-      setTimeout(() => {
-        setUploading(false);
-        setConnected(true);
-      }, 1500);
-    }
+  const counts = {
+    ics: events.filter((e) => e.source === "ics").length,
+    google: events.filter((e) => e.source === "google").length,
+    notion: events.filter((e) => e.source === "notion").length,
+  };
+
+  const replaceSource = (source: CalendarEvent["source"], next: CalendarEvent[]) => {
+    setEvents((prev) => [...prev.filter((e) => e.source !== source), ...next]);
+  };
+
+  const clearSource = (source: CalendarEvent["source"]) => {
+    setEvents((prev) => prev.filter((e) => e.source !== source));
   };
 
   return (
@@ -26,109 +50,286 @@ export function CalendarIntegration() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-card p-6 rounded-2xl shadow-sm border border-border hover:border-primary/30 transition-colors">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-              <LinkIcon className="w-5 h-5 text-primary" />
-            </div>
-            <h3>Connect Notion</h3>
-          </div>
-          <p className="text-sm text-muted-foreground mb-6">
-            Sync your Notion calendar to track commitments alongside your energy levels
-          </p>
-          <button
-            onClick={() => setConnected(true)}
-            className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 transition-all"
-          >
-            {connected ? (
-              <span className="flex items-center justify-center gap-2">
-                <CheckCircle2 className="w-4 h-4" />
-                Connected
-              </span>
-            ) : (
-              "Connect Notion"
-            )}
-          </button>
-        </div>
+        <IcsCard
+          count={counts.ics}
+          onImport={(parsed) =>
+            replaceSource(
+              "ics",
+              parsed.map((p) => ({
+                id: `ics-${p.uid}`,
+                source: "ics",
+                title: p.title,
+                start: p.start,
+                end: p.end,
+                allDay: p.allDay,
+              })),
+            )
+          }
+          onClear={() => clearSource("ics")}
+        />
 
-        <div className="bg-card p-6 rounded-2xl shadow-sm border border-border hover:border-primary/30 transition-colors">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-secondary/30 flex items-center justify-center">
-              <CalendarIcon className="w-5 h-5 text-secondary" />
-            </div>
-            <h3>External Calendar</h3>
-          </div>
-          <p className="text-sm text-muted-foreground mb-6">
-            Connect Google Calendar, Outlook, or any calendar that supports .ics export
-          </p>
-          <button className="w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-xl hover:bg-secondary/80 transition-all">
-            Connect Calendar
-          </button>
-        </div>
+        <GoogleCard
+          count={counts.google}
+          onImport={(items) => replaceSource("google", items)}
+          onClear={() => clearSource("google")}
+        />
+
+        <NotionCard
+          config={notion}
+          onChange={setNotion}
+          count={counts.notion}
+          onClear={() => clearSource("notion")}
+        />
+
+        <SummaryCard total={events.length} />
       </div>
+    </div>
+  );
+}
 
-      <div className="bg-card p-8 rounded-2xl shadow-sm border border-border">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-full bg-accent/30 flex items-center justify-center">
-            <Upload className="w-5 h-5 text-accent" />
-          </div>
-          <h3>Upload Files</h3>
+function Card(props: { children: React.ReactNode }) {
+  return (
+    <div className="bg-card p-6 rounded-2xl shadow-sm border border-border space-y-4">
+      {props.children}
+    </div>
+  );
+}
+
+function StatusLine({ status }: { status: Status }) {
+  if (status.kind === "idle") return null;
+  const tone =
+    status.kind === "error"
+      ? "text-destructive"
+      : status.kind === "ok"
+        ? "text-primary"
+        : "text-muted-foreground";
+  const Icon = status.kind === "error" ? AlertCircle : status.kind === "ok" ? CheckCircle2 : null;
+  return (
+    <p className={`flex items-center gap-2 text-sm ${tone}`}>
+      {Icon && <Icon className="w-4 h-4" />}
+      <span>{status.message}</span>
+    </p>
+  );
+}
+
+function IcsCard({
+  count,
+  onImport,
+  onClear,
+}: {
+  count: number;
+  onImport: (parsed: ReturnType<typeof parseIcs>) => void;
+  onClear: () => void;
+}) {
+  const [status, setStatus] = useState<Status>({ kind: "idle" });
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setStatus({ kind: "busy", message: "Parsing…" });
+    try {
+      const text = await file.text();
+      const parsed = parseIcs(text);
+      if (!parsed.length) throw new Error("No events found in file");
+      onImport(parsed);
+      setStatus({ kind: "ok", message: `Imported ${parsed.length} events` });
+    } catch (err) {
+      setStatus({ kind: "error", message: (err as Error).message });
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center gap-3">
+        <Upload className="w-5 h-5 text-primary" />
+        <h3 className="text-xl">ICS Upload</h3>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Export a .ics file from any calendar (Apple, Outlook, Google) and drop it in. Parsed
+        locally — nothing leaves your device.
+      </p>
+      <label className="block">
+        <input
+          type="file"
+          accept=".ics,text/calendar"
+          onChange={handleFile}
+          className="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+        />
+      </label>
+      <StatusLine status={status} />
+      <SourceFooter count={count} onClear={onClear} label="ICS events" />
+    </Card>
+  );
+}
+
+function GoogleCard({
+  count,
+  onImport,
+  onClear,
+}: {
+  count: number;
+  onImport: (events: CalendarEvent[]) => void;
+  onClear: () => void;
+}) {
+  const [status, setStatus] = useState<Status>({ kind: "idle" });
+  const clientId = getGoogleClientId();
+
+  const connect = async () => {
+    setStatus({ kind: "busy", message: "Waiting for Google sign-in…" });
+    try {
+      const token = await requestGoogleToken();
+      setStatus({ kind: "busy", message: "Fetching events…" });
+      const start = new Date();
+      start.setMonth(start.getMonth() - 1);
+      const end = new Date();
+      end.setMonth(end.getMonth() + 3);
+      const items = await fetchGoogleEvents(token, start, end);
+      const mapped: CalendarEvent[] = items
+        .map((i) => {
+          const startIso = i.start.dateTime || (i.start.date ? `${i.start.date}T00:00:00` : null);
+          const endIso = i.end?.dateTime || (i.end?.date ? `${i.end.date}T00:00:00` : null);
+          if (!startIso) return null;
+          return {
+            id: `google-${i.id}`,
+            source: "google" as const,
+            title: i.summary || "(untitled)",
+            start: new Date(startIso).toISOString(),
+            end: endIso ? new Date(endIso).toISOString() : null,
+            allDay: !i.start.dateTime,
+          };
+        })
+        .filter((x): x is CalendarEvent => x !== null);
+      onImport(mapped);
+      setStatus({ kind: "ok", message: `Imported ${mapped.length} events` });
+    } catch (err) {
+      setStatus({ kind: "error", message: (err as Error).message });
+    }
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center gap-3">
+        <CalendarIcon className="w-5 h-5 text-primary" />
+        <h3 className="text-xl">Google Calendar</h3>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Read-only sync of your primary calendar via Google OAuth. Token is stored in this browser
+        only.
+      </p>
+      {!clientId ? (
+        <div className="p-3 rounded-lg bg-muted text-xs space-y-1">
+          <p className="font-medium">Setup required</p>
+          <p className="text-muted-foreground">
+            Set <code>VITE_GOOGLE_CLIENT_ID</code> at build time. Create an OAuth client in Google
+            Cloud Console (type: Web), add this origin to authorized origins, and rebuild.
+          </p>
         </div>
+      ) : (
+        <button
+          onClick={connect}
+          disabled={status.kind === "busy"}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-all text-sm"
+        >
+          Connect Google Calendar
+        </button>
+      )}
+      <StatusLine status={status} />
+      <SourceFooter count={count} onClear={onClear} label="Google events" />
+    </Card>
+  );
+}
 
-        <p className="text-sm text-muted-foreground mb-6">
-          Upload your schedule as an .ics file or PDF to import events
+function NotionCard({
+  config,
+  onChange,
+  count,
+  onClear,
+}: {
+  config: NotionConfig;
+  onChange: (next: NotionConfig) => void;
+  count: number;
+  onClear: () => void;
+}) {
+  const [status] = useState<Status>({ kind: "idle" });
+
+  return (
+    <Card>
+      <div className="flex items-center gap-3">
+        <CalendarIcon className="w-5 h-5 text-primary" />
+        <h3 className="text-xl">Notion</h3>
+      </div>
+      <p className="text-sm text-muted-foreground">
+        Save your Notion integration token and a database ID. Storing them here readies the
+        connection — fetching live requires a server proxy (see note below).
+      </p>
+      <div className="space-y-2">
+        <input
+          type="password"
+          placeholder="Notion integration token (secret_…)"
+          value={config.token}
+          onChange={(e) => onChange({ ...config, token: e.target.value })}
+          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <input
+          type="text"
+          placeholder="Database ID"
+          value={config.databaseId}
+          onChange={(e) => onChange({ ...config, databaseId: e.target.value })}
+          className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+      </div>
+      <div className="p-3 rounded-lg bg-muted text-xs space-y-1">
+        <p className="font-medium flex items-center gap-2">
+          <AlertCircle className="w-3 h-3" /> Backend proxy needed
         </p>
-
-        <div className="border-2 border-dashed border-border rounded-xl p-12 text-center hover:border-primary/50 transition-colors">
-          <input
-            type="file"
-            accept=".ics,.pdf"
-            onChange={handleFileUpload}
-            className="hidden"
-            id="file-upload"
-          />
-          <label htmlFor="file-upload" className="cursor-pointer">
-            <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            {uploading ? (
-              <p className="text-sm text-muted-foreground">Uploading...</p>
-            ) : (
-              <>
-                <p className="text-sm mb-2">Drop your .ics or PDF file here</p>
-                <p className="text-xs text-muted-foreground">or click to browse</p>
-              </>
-            )}
-          </label>
-        </div>
-
-        {connected && (
-          <div className="mt-6 p-4 bg-primary/10 rounded-xl border border-primary/20">
-            <p className="text-sm text-foreground/80 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-primary" />
-              Your calendar has been imported. Events will now appear in your rhythm view.
-            </p>
-          </div>
-        )}
+        <p className="text-muted-foreground">
+          Notion's API doesn't allow browser requests (no CORS). Credentials are saved locally;
+          live import will activate once a serverless proxy at <code>/api/notion</code> is
+          deployed.
+        </p>
       </div>
+      <StatusLine status={status} />
+      <SourceFooter count={count} onClear={onClear} label="Notion events" />
+    </Card>
+  );
+}
 
-      <div className="bg-muted/50 p-6 rounded-2xl border border-border">
-        <h4 className="text-sm font-medium mb-3">Why connect your calendar?</h4>
-        <ul className="space-y-2 text-sm text-muted-foreground">
-          <li className="flex items-start gap-2">
-            <span className="text-primary mt-1">•</span>
-            <span>See how your scheduled commitments align with your natural energy patterns</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-primary mt-1">•</span>
-            <span>Notice when you're scheduling against your rhythm and adjust accordingly</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-primary mt-1">•</span>
-            <span>
-              Build a practice of honoring both your commitments and your body's needs
-            </span>
-          </li>
-        </ul>
-      </div>
+function SourceFooter({
+  count,
+  onClear,
+  label,
+}: {
+  count: number;
+  onClear: () => void;
+  label: string;
+}) {
+  if (count === 0) return null;
+  return (
+    <div className="flex items-center justify-between text-sm pt-2 border-t border-border">
+      <span className="text-muted-foreground">
+        {count} {label} stored
+      </span>
+      <button
+        onClick={onClear}
+        className="flex items-center gap-1 text-muted-foreground hover:text-destructive transition-colors"
+      >
+        <Trash2 className="w-3 h-3" />
+        Clear
+      </button>
+    </div>
+  );
+}
+
+function SummaryCard({ total }: { total: number }) {
+  return (
+    <div className="bg-primary/10 p-6 rounded-2xl border border-primary/20 flex flex-col justify-center">
+      <p className="text-sm text-foreground/80">
+        {total === 0
+          ? "No events imported yet. Connect a source to overlay your schedule on the calendar view."
+          : `${total} events ready. Switch to the Calendar tab to see them alongside your energy and mood.`}
+      </p>
     </div>
   );
 }
