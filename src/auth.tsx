@@ -1,89 +1,72 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import {
-  startRegistration,
-  startAuthentication,
-  browserSupportsWebAuthn,
-} from "@simplewebauthn/browser";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { ID } from "appwrite";
+import { account } from "./appwrite";
 
 interface User {
   id: string;
-  username: string;
+  email: string;
+  name: string;
 }
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  signUp: (username: string) => Promise<void>;
-  signIn: (username: string) => Promise<void>;
+  // Sends a magic-URL email. Returns when the email is dispatched, not when the
+  // user clicks the link.
+  sendMagicLink: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
-  supported: boolean;
+  // Called from the magic-URL landing page to exchange ?userId & ?secret for a session.
+  completeMagicLink: (userId: string, secret: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function jsonPost(url: string, body: unknown) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "same-origin",
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const msg = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(msg.error || "Request failed");
-  }
-  return res.json();
+function toUser(raw: { $id: string; email: string; name: string }): User {
+  return { id: raw.$id, email: raw.email, name: raw.name };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetch("/api/auth/me", { credentials: "same-origin" })
-      .then((r) => r.json())
-      .then((d) => setUser(d.user))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+  const refresh = useCallback(async () => {
+    try {
+      const me = await account.get();
+      setUser(toUser(me));
+    } catch {
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const signUp = async (username: string) => {
-    const start = await jsonPost("/api/auth/register-start", { username });
-    const attResp = await startRegistration({ optionsJSON: start.options });
-    const finish = await jsonPost("/api/auth/register-finish", {
-      userId: start.userId,
-      username: start.username,
-      response: attResp,
-    });
-    setUser(finish.user);
-  };
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
-  const signIn = async (username: string) => {
-    const start = await jsonPost("/api/auth/login-start", { username });
-    const authResp = await startAuthentication({ optionsJSON: start.options });
-    const finish = await jsonPost("/api/auth/login-finish", {
-      userId: start.userId,
-      response: authResp,
-    });
-    setUser(finish.user);
-  };
+  const sendMagicLink = useCallback(async (email: string) => {
+    const redirect = `${window.location.origin}/auth/callback`;
+    await account.createMagicURLToken(ID.unique(), email, redirect);
+  }, []);
 
-  const signOut = async () => {
-    await jsonPost("/api/auth/logout", {});
-    setUser(null);
-  };
+  const completeMagicLink = useCallback(
+    async (userId: string, secret: string) => {
+      await account.createSession(userId, secret);
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const signOut = useCallback(async () => {
+    try {
+      await account.deleteSession("current");
+    } finally {
+      setUser(null);
+    }
+  }, []);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        signUp,
-        signIn,
-        signOut,
-        supported: browserSupportsWebAuthn(),
-      }}
-    >
+    <AuthContext.Provider value={{ user, loading, sendMagicLink, completeMagicLink, signOut }}>
       {children}
     </AuthContext.Provider>
   );

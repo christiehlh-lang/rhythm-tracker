@@ -1,37 +1,43 @@
 # Database + Auth Setup
 
-The app gates behind passkey sign-in and syncs per-user data to a Neon Postgres
-database via Vercel serverless functions. All sensitive logic lives in `api/`.
+The app uses **Appwrite** for both authentication (magic-link email) and
+per-user data storage. No custom backend code — everything talks to the
+Appwrite SDK from the browser.
 
-## 1. Create the Neon database
+## 1. Create the Appwrite project
 
-1. Sign in at https://neon.tech and create a new project.
-2. From the dashboard → **Connection Details** → copy the `postgresql://…`
-   connection string (it already includes `sslmode=require`).
-3. Pick the region that matches your users (EU if you have EU testers).
+1. Sign in at https://cloud.appwrite.io (or self-host — same SDK).
+2. **Create a project**. Note the **Project ID** (top of dashboard).
+3. **Settings → Platforms → Add Platform → Web App**. Add your hostnames:
+   - `localhost`
+   - `your-app.vercel.app` (and any custom domain)
+4. **Auth → Settings**: enable **Email/Password** *or* **Magic URL**. The app
+   uses Magic URL — make sure that toggle is on.
 
-## 2. Configure environment variables
+## 2. Create the database + collection
 
-Set these on Vercel (Project → Settings → Environment Variables) **and** in a
-local `.env` if you want to run migrations from your machine:
+1. **Databases → Create database**. Note the **Database ID**.
+2. Inside it, **Create collection** named `userState`. Note the **Collection ID**.
+3. Add a single attribute:
+   - **value** — String, size `1000000` (1 MB), required.
+4. **Collection → Settings → Permissions**:
+   - Document-level security: **enabled**.
+   - Collection permissions: **Create — Any authenticated user (`users`)**.
+   - The app sets per-document read/write/delete permissions for the owner
+     when creating each document, so no other roles are needed at the
+     collection level.
 
-| Variable        | Example                                                | Notes                                               |
-| --------------- | ------------------------------------------------------ | --------------------------------------------------- |
-| `DATABASE_URL`  | `postgresql://user:pw@ep-xxx.neon.tech/db?sslmode=require` | Neon connection string                          |
-| `RP_ID`         | `your-app.vercel.app`                                  | Host only, no scheme, no port. Use `localhost` locally. |
-| `RP_ORIGIN`     | `https://your-app.vercel.app`                          | Full origin. Use `http://localhost:5173` locally.   |
+## 3. Configure environment variables
 
-Passkeys are bound to `RP_ID`. Changing it later invalidates existing passkeys.
+Set these on Vercel (Project → Settings → Environment Variables) and locally
+in `.env.local`. They must start with `VITE_` to be exposed to the browser.
 
-## 3. Run the schema migration
-
-```bash
-DATABASE_URL='postgresql://…' pnpm db:migrate
-```
-
-This creates `users`, `credentials`, `challenges`, `sessions`, and `user_state`
-tables, plus row-level security policies that scope every read/write to the
-signed-in user.
+| Variable                          | Example                              |
+| --------------------------------- | ------------------------------------ |
+| `VITE_APPWRITE_ENDPOINT`          | `https://cloud.appwrite.io/v1`       |
+| `VITE_APPWRITE_PROJECT_ID`        | `66f0…`                              |
+| `VITE_APPWRITE_DATABASE_ID`       | `rhythm`                             |
+| `VITE_APPWRITE_COLLECTION_ID`     | `userState`                          |
 
 ## 4. Deploy
 
@@ -39,26 +45,32 @@ signed-in user.
 git push origin claude/kind-bell-MsC7L
 ```
 
-Then on Vercel: New Project → import the repo → set the three env vars from
-step 2 → Deploy. The `vercel.json` here already excludes `/api/*` from the SPA
-rewrite so the serverless functions route correctly.
+Then on Vercel: import the repo → set the four env vars from step 3 → Deploy.
 
 ## 5. Verify
 
 - Visit the deployed URL. You should see the sign-in screen.
-- Create an account with a username; the browser will prompt for a passkey
-  (Face ID / Touch ID / Windows Hello / security key).
+- Enter an email, receive a magic link, click it. The redirect lands on
+  `/auth/callback` which the app intercepts to create a session.
 - Log a check-in, sign out, sign back in — the entry should reappear.
 
 ## Security posture
 
-- **Sessions** are 32-byte random tokens, SHA-256 hashed before storage.
-  Cookies are `HttpOnly`, `Secure` (in production), `SameSite=Lax`.
-- **Row-level security** is enforced in Postgres. Every per-user query runs
-  inside a transaction that sets `app.current_user_id`; the DB refuses to
-  return another user's rows even if app code has a bug.
-- **Passkeys** mean there's no password to phish or reuse. Lose all your
-  passkeys for an account and the account is irrecoverable — there's no
-  email-based recovery flow yet. Add a backup passkey on a second device.
+- **Auth, sessions, and password hashing** are Appwrite's responsibility.
+  Sessions are HTTP-only cookies set by Appwrite for your project's endpoint.
+- **Document permissions** are enforced server-side by Appwrite. Each
+  `userState` document is created with read/update/delete restricted to a
+  single user ID (`Role.user(userId)`) — no other user can read it even if
+  they know the document ID.
 - **localStorage stays the local cache** so the app works offline. Writes
-  go to the server (debounced 600 ms) when online.
+  go to Appwrite (debounced 600 ms) when online.
+- **No data migration needed.** When a user signs in for the first time,
+  any local entries are pushed up to their Appwrite account.
+
+## Limits to be aware of
+
+- Magic-link emails come from Appwrite's transactional sender by default.
+  For production you'll want to point Appwrite at your own SMTP / Resend /
+  Postmark so links don't land in spam.
+- Lose access to the email = lose the account. Appwrite's account recovery
+  flow can be enabled if you need a fallback.
