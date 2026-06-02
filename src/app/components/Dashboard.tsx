@@ -1,7 +1,12 @@
-import { Circle, Calendar, Brain, Timer, Moon, TrendingUp } from "lucide-react";
+import { Circle, Brain, Timer, Moon, TrendingUp, Calendar, Link as LinkIcon, ChevronRight } from "lucide-react";
 import { useLocalStorage, STORAGE_KEYS, type DailyEntry } from "../../store";
+import type { Tab } from "../App";
 
-export function Dashboard() {
+interface Props {
+  onNavigate: (tab: Tab) => void;
+}
+
+export function Dashboard({ onNavigate }: Props) {
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
@@ -9,8 +14,12 @@ export function Dashboard() {
   });
 
   const currentPhase = getMoonPhase(new Date());
+  const todayKey = new Date().toISOString().split("T")[0];
 
   const [entries] = useLocalStorage<Record<string, DailyEntry>>(STORAGE_KEYS.daily, {});
+  const todayEntry = entries[todayKey];
+  const checkInCount = (todayEntry as DailyEntry & { checkIns?: unknown[] })?.checkIns?.length ?? (todayEntry ? 1 : 0);
+
   const weekEntries = Array.from({ length: 7 })
     .map((_, i) => {
       const d = new Date();
@@ -33,76 +42,86 @@ export function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-card p-8 rounded-2xl shadow-sm border border-border hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-              <Circle className="w-6 h-6 text-primary" />
-            </div>
-            <h3 className="text-xl">Today's Check-in</h3>
-          </div>
-          <p className="text-sm text-muted-foreground mb-4">
-            Take a moment to notice how you're feeling right now
-          </p>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-primary">•</span>
-            <span className="text-muted-foreground">Energy, mood, and focus tracking</span>
-          </div>
-        </div>
+        <Card
+          onClick={() => onNavigate("today")}
+          icon={<Circle className="w-6 h-6 text-primary" />}
+          iconBg="bg-primary/20"
+          title="Today's Check-in"
+          subtitle={
+            checkInCount > 0
+              ? `${checkInCount} check-in${checkInCount === 1 ? "" : "s"} today — log another`
+              : "Take a moment to notice how you're feeling right now"
+          }
+          status={
+            todayEntry ? (
+              <div className="flex items-center gap-3 text-sm">
+                <Pill label="Energy" value={todayEntry.energy} />
+                <Pill label="Mood" value={todayEntry.mood} />
+                <Pill label="Focus" value={todayEntry.productivity} />
+              </div>
+            ) : (
+              <span className="text-muted-foreground text-sm">No check-in yet</span>
+            )
+          }
+        />
 
-        <div className="bg-card p-8 rounded-2xl shadow-sm border border-border hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-12 h-12 rounded-full bg-accent/30 flex items-center justify-center">
-              <Moon className="w-6 h-6 text-accent" />
-            </div>
-            <h3 className="text-xl">Your Rhythm</h3>
-          </div>
-          <p className="text-sm text-muted-foreground mb-4">
-            Track your cycle and see how it aligns with the moon
-          </p>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-accent">•</span>
-            <span className="text-muted-foreground">Current moon: {currentPhase}</span>
-          </div>
-        </div>
+        <Card
+          onClick={() => onNavigate("rhythm")}
+          icon={<Moon className="w-6 h-6 text-accent" />}
+          iconBg="bg-accent/30"
+          title="Your Rhythm"
+          subtitle="Track your cycle and see how it aligns with the moon"
+          status={<span className="text-sm text-muted-foreground">Current moon: {currentPhase}</span>}
+        />
 
-        <div className="bg-card p-8 rounded-2xl shadow-sm border border-border hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-12 h-12 rounded-full bg-secondary/30 flex items-center justify-center">
-              <Brain className="w-6 h-6 text-secondary" />
-            </div>
-            <h3 className="text-xl">Brain Dump</h3>
-          </div>
-          <p className="text-sm text-muted-foreground mb-4">
-            Empty your mind onto the page—no structure needed
-          </p>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-secondary">•</span>
-            <span className="text-muted-foreground">Free-form thoughts and ideas</span>
-          </div>
-        </div>
+        <Card
+          onClick={() => onNavigate("brain-dump")}
+          icon={<Brain className="w-6 h-6 text-secondary" />}
+          iconBg="bg-secondary/30"
+          title="Brain Dump"
+          subtitle="Empty your mind onto the page — no structure needed"
+          status={<span className="text-sm text-muted-foreground">Free-form thoughts and ideas</span>}
+        />
 
-        <div className="bg-card p-8 rounded-2xl shadow-sm border border-border hover:shadow-md transition-shadow">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-12 h-12 rounded-full bg-chart-3/30 flex items-center justify-center">
-              <Timer className="w-6 h-6 text-chart-3" />
-            </div>
-            <h3 className="text-xl">Tasks & Focus</h3>
-          </div>
-          <p className="text-sm text-muted-foreground mb-4">
-            Time-box your work around your natural energy
-          </p>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-chart-3">•</span>
-            <span className="text-muted-foreground">Flexible task timer</span>
-          </div>
-        </div>
+        <Card
+          onClick={() => onNavigate("tasks")}
+          icon={<Timer className="w-6 h-6 text-chart-3" />}
+          iconBg="bg-chart-3/30"
+          title="Tasks & Focus"
+          subtitle="Time-box your work around your natural energy"
+          status={<span className="text-sm text-muted-foreground">Flexible task timer</span>}
+        />
+
+        <Card
+          onClick={() => onNavigate("calendar")}
+          icon={<Calendar className="w-6 h-6 text-primary" />}
+          iconBg="bg-primary/20"
+          title="Calendar"
+          subtitle="See your schedule alongside your rhythm"
+          status={<span className="text-sm text-muted-foreground">Energy and events together</span>}
+        />
+
+        <Card
+          onClick={() => onNavigate("integrations")}
+          icon={<LinkIcon className="w-6 h-6 text-accent" />}
+          iconBg="bg-accent/30"
+          title="Connect"
+          subtitle="Upload ICS or PDF schedules"
+          status={<span className="text-sm text-muted-foreground">Import events</span>}
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-        <div className="bg-card p-8 rounded-2xl shadow-sm border border-border">
-          <div className="flex items-center gap-4 mb-4">
-            <TrendingUp className="w-5 h-5 text-primary" />
-            <h3>This Week's Pattern</h3>
+        <button
+          onClick={() => onNavigate("insights")}
+          className="bg-card p-8 rounded-2xl shadow-sm border border-border text-left hover:shadow-md hover:border-primary/30 transition-all"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="w-5 h-5 text-primary" />
+              <h3>This Week's Pattern</h3>
+            </div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
           </div>
           <div className="space-y-3">
             <div className="flex justify-between items-center">
@@ -133,7 +152,7 @@ export function Dashboard() {
               </p>
             )}
           </div>
-        </div>
+        </button>
 
         <div className="bg-primary/10 p-8 rounded-2xl border border-primary/20">
           <p className="text-sm italic text-foreground/80">
@@ -143,6 +162,49 @@ export function Dashboard() {
         </div>
       </div>
     </div>
+  );
+}
+
+function Card({
+  onClick,
+  icon,
+  iconBg,
+  title,
+  subtitle,
+  status,
+}: {
+  onClick: () => void;
+  icon: React.ReactNode;
+  iconBg: string;
+  title: string;
+  subtitle: string;
+  status: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="bg-card p-8 rounded-2xl shadow-sm border border-border text-left hover:shadow-md hover:border-primary/30 transition-all"
+    >
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${iconBg}`}>
+            {icon}
+          </div>
+          <h3 className="text-xl">{title}</h3>
+        </div>
+        <ChevronRight className="w-5 h-5 text-muted-foreground" />
+      </div>
+      <p className="text-sm text-muted-foreground mb-4">{subtitle}</p>
+      {status}
+    </button>
+  );
+}
+
+function Pill({ label, value }: { label: string; value: number }) {
+  return (
+    <span className="px-3 py-1 rounded-full bg-primary/10 text-primary text-xs">
+      {label} {value}/5
+    </span>
   );
 }
 

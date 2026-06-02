@@ -101,12 +101,17 @@ export function CalendarView() {
               <button
                 key={day}
                 onClick={() => setSelectedDay(day === selectedDay ? null : day)}
-                className={`aspect-square rounded-xl p-2 transition-all hover:shadow-md ${
+                className={`relative aspect-square rounded-xl p-1.5 transition-all hover:shadow-md ${
                   isToday ? "ring-2 ring-primary" : ""
                 } ${day === selectedDay ? "ring-2 ring-accent" : ""} ${
                   entry ? getEnergyColor(entry.energy) : "bg-background hover:bg-muted"
                 }`}
               >
+                {dayEvents.length > 0 && (
+                  <span className="absolute top-1 right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-accent-foreground text-[10px] font-medium flex items-center justify-center shadow-sm">
+                    {dayEvents.length}
+                  </span>
+                )}
                 <div className="flex flex-col items-center justify-center h-full gap-1">
                   <span
                     className={`text-sm ${
@@ -115,12 +120,14 @@ export function CalendarView() {
                   >
                     {day}
                   </span>
-                  <div className="flex gap-0.5">
-                    {entry?.hasNotes && <span className="w-1 h-1 rounded-full bg-white/70" />}
-                    {dayEvents.length > 0 && (
-                      <span className="w-1 h-1 rounded-full bg-accent" />
-                    )}
-                  </div>
+                  {dayEvents.length > 0 && (
+                    <div className="w-full px-1">
+                      <div className="h-1 rounded-full bg-accent/70" />
+                    </div>
+                  )}
+                  {entry?.hasNotes && (
+                    <span className="w-1 h-1 rounded-full bg-white/70" />
+                  )}
                 </div>
               </button>
             );
@@ -165,7 +172,7 @@ export function CalendarView() {
         )}
 
         <div className="mt-6 pt-6 border-t border-border">
-          <div className="flex items-center gap-6 justify-center text-sm">
+          <div className="flex items-center gap-x-6 gap-y-2 justify-center text-sm flex-wrap">
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 rounded bg-primary" />
               <span className="text-muted-foreground">High energy</span>
@@ -177,6 +184,10 @@ export function CalendarView() {
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 rounded bg-muted" />
               <span className="text-muted-foreground">Resting</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-accent-foreground text-[10px] font-medium flex items-center justify-center">3</span>
+              <span className="text-muted-foreground">Events that day</span>
             </div>
           </div>
         </div>

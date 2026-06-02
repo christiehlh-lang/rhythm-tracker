@@ -23,7 +23,7 @@ import { SignIn } from "./components/SignIn";
 import { registerServiceWorker } from "../utils/pwa";
 import { useAuth } from "../auth";
 
-type Tab =
+export type Tab =
   | "dashboard"
   | "today"
   | "calendar"
@@ -131,7 +131,7 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-12">
-        {activeTab === "dashboard" && <Dashboard />}
+        {activeTab === "dashboard" && <Dashboard onNavigate={setActiveTab} />}
         {activeTab === "today" && <DailyTracker />}
         {activeTab === "calendar" && <CalendarView />}
         {activeTab === "insights" && <InsightsView />}
