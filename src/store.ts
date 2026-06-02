@@ -24,6 +24,15 @@ export function useLocalOnly<T>(key: string, initial: T): [T, (v: T | ((prev: T)
   return [value, setValue];
 }
 
+export interface CheckIn {
+  timestamp: string; // ISO
+  energy: number;
+  mood: number;
+  productivity: number;
+  flow: "heavy" | "medium" | "light" | "none";
+  notes: string;
+}
+
 export interface DailyEntry {
   date: string;
   energy: number;
@@ -32,6 +41,7 @@ export interface DailyEntry {
   flow: "heavy" | "medium" | "light" | "none";
   symptoms: string[];
   notes: string;
+  checkIns?: CheckIn[];
 }
 
 export interface DumpEntry {
