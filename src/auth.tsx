@@ -1,72 +1,61 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { ID } from "appwrite";
-import { account } from "./appwrite";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 interface User {
   id: string;
   email: string;
-  name: string;
 }
 
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  // Sends a magic-URL email. Returns when the email is dispatched, not when the
-  // user clicks the link.
-  sendMagicLink: (email: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  // Called from the magic-URL landing page to exchange ?userId & ?secret for a session.
-  completeMagicLink: (userId: string, secret: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function toUser(raw: { $id: string; email: string; name: string }): User {
-  return { id: raw.$id, email: raw.email, name: raw.name };
+async function jsonPost(url: string, body: unknown): Promise<{ user: User }> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({ error: res.statusText }));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
-    try {
-      const me = await account.get();
-      setUser(toUser(me));
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const sendMagicLink = useCallback(async (email: string) => {
-    const redirect = `${window.location.origin}/auth/callback`;
-    await account.createMagicURLToken(ID.unique(), email, redirect);
+    fetch("/api/auth/me", { credentials: "same-origin" })
+      .then((r) => r.json())
+      .then((d) => setUser(d.user))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false));
   }, []);
 
-  const completeMagicLink = useCallback(
-    async (userId: string, secret: string) => {
-      await account.createSession(userId, secret);
-      await refresh();
-    },
-    [refresh],
-  );
+  const signUp = async (email: string, password: string) => {
+    const data = await jsonPost("/api/auth/register", { email, password });
+    setUser(data.user);
+  };
 
-  const signOut = useCallback(async () => {
-    try {
-      await account.deleteSession("current");
-    } finally {
-      setUser(null);
-    }
-  }, []);
+  const signIn = async (email: string, password: string) => {
+    const data = await jsonPost("/api/auth/login", { email, password });
+    setUser(data.user);
+  };
+
+  const signOut = async () => {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+    setUser(null);
+  };
 
   return (
-    <AuthContext.Provider value={{ user, loading, sendMagicLink, completeMagicLink, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signUp, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

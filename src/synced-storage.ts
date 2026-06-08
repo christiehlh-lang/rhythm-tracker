@@ -1,14 +1,10 @@
-// Drop-in replacement for useLocalStorage. Reads localStorage first for instant
-// render, then reconciles with an Appwrite document whose $id == storage key.
-// Writes go to localStorage immediately and to Appwrite (debounced).
+// Drop-in for useLocalStorage. Reads localStorage first for instant render,
+// then reconciles with /api/state/<key>:
+//   - server has a value          → use server, overwrite local
+//   - server empty, local has data → push local to server
+// Writes go to localStorage immediately and to the server (debounced).
 
 import { useEffect, useRef, useState } from "react";
-import { AppwriteException, Permission, Role } from "appwrite";
-import {
-  APPWRITE_COLLECTION_ID,
-  APPWRITE_DATABASE_ID,
-  databases,
-} from "./appwrite";
 import { useAuth } from "./auth";
 
 const SYNCABLE = new Set([
@@ -18,15 +14,6 @@ const SYNCABLE = new Set([
   "rhythm.cycle.v1",
   "rhythm.calendarEvents.v1",
 ]);
-
-// Appwrite document $id is restricted to [a-zA-Z0-9._-], max 36 chars.
-// Hash the key (which already fits but uses dots; dots are allowed) into a
-// per-user document id that includes the user id.
-function docId(userId: string, key: string): string {
-  const safeKey = key.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const id = `${userId}.${safeKey}`;
-  return id.slice(0, 36);
-}
 
 function readLocal<T>(key: string, initial: T): T {
   if (typeof window === "undefined") return initial;
@@ -42,7 +29,7 @@ function writeLocal<T>(key: string, value: T) {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // ignore quota
+    // quota / disabled storage — fail quiet
   }
 }
 
@@ -51,47 +38,6 @@ function isEmpty(v: unknown): boolean {
   if (Array.isArray(v)) return v.length === 0;
   if (typeof v === "object") return Object.keys(v as object).length === 0;
   return false;
-}
-
-async function readRemote<T>(userId: string, key: string): Promise<T | null> {
-  try {
-    const doc = await databases.getDocument(
-      APPWRITE_DATABASE_ID,
-      APPWRITE_COLLECTION_ID,
-      docId(userId, key),
-    );
-    // Stored as a JSON-encoded string in the `value` field.
-    return JSON.parse((doc as unknown as { value: string }).value) as T;
-  } catch (err) {
-    if (err instanceof AppwriteException && err.code === 404) return null;
-    throw err;
-  }
-}
-
-async function writeRemote<T>(userId: string, key: string, value: T): Promise<void> {
-  const id = docId(userId, key);
-  const payload = { value: JSON.stringify(value) };
-  // Read/write restricted to the owning user via per-document permissions.
-  const perms = [
-    Permission.read(Role.user(userId)),
-    Permission.update(Role.user(userId)),
-    Permission.delete(Role.user(userId)),
-  ];
-  try {
-    await databases.updateDocument(APPWRITE_DATABASE_ID, APPWRITE_COLLECTION_ID, id, payload);
-  } catch (err) {
-    if (err instanceof AppwriteException && err.code === 404) {
-      await databases.createDocument(
-        APPWRITE_DATABASE_ID,
-        APPWRITE_COLLECTION_ID,
-        id,
-        payload,
-        perms,
-      );
-      return;
-    }
-    throw err;
-  }
 }
 
 export function useSyncedStorage<T>(
@@ -103,25 +49,34 @@ export function useSyncedStorage<T>(
   const lastPushed = useRef<string>("");
   const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Reconcile with server when sign-in state changes.
   useEffect(() => {
     if (!user || !SYNCABLE.has(key)) return;
     let cancelled = false;
     (async () => {
       try {
-        const serverValue = await readRemote<T>(user.id, key);
+        const res = await fetch(`/api/state/${encodeURIComponent(key)}`, {
+          credentials: "same-origin",
+        });
+        if (!res.ok) return;
+        const data = await res.json();
         if (cancelled) return;
+        const serverValue = data.value as T | null;
         const local = readLocal<T>(key, initial);
         if (serverValue !== null && !isEmpty(serverValue)) {
           setValue(serverValue);
           writeLocal(key, serverValue);
           lastPushed.current = JSON.stringify(serverValue);
         } else if (!isEmpty(local)) {
-          await writeRemote(user.id, key, local);
+          await fetch(`/api/state/${encodeURIComponent(key)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(local),
+          });
           lastPushed.current = JSON.stringify(local);
         }
       } catch {
-        // offline: silently fall back to local-only
+        // offline: fall back silently
       }
     })();
     return () => {
@@ -129,7 +84,6 @@ export function useSyncedStorage<T>(
     };
   }, [user?.id, key]);
 
-  // Persist locally + debounced push to server on every change.
   useEffect(() => {
     writeLocal(key, value);
     if (!user || !SYNCABLE.has(key)) return;
@@ -139,7 +93,12 @@ export function useSyncedStorage<T>(
     if (pendingTimer.current) clearTimeout(pendingTimer.current);
     pendingTimer.current = setTimeout(async () => {
       try {
-        await writeRemote(user.id, key, value);
+        await fetch(`/api/state/${encodeURIComponent(key)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: serialized,
+        });
         lastPushed.current = serialized;
       } catch {
         // retry on next change

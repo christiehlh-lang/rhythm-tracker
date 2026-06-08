@@ -1,76 +1,58 @@
-# Database + Auth Setup
+# Setup
 
-The app uses **Appwrite** for both authentication (magic-link email) and
-per-user data storage. No custom backend code — everything talks to the
-Appwrite SDK from the browser.
+Vercel does everything: hosting, the database (Vercel Postgres), and the API
+(serverless functions in `api/`). No third-party auth service, no CORS config,
+no email provider.
 
-## 1. Create the Appwrite project
+## 1. Create the database
 
-1. Sign in at https://cloud.appwrite.io (or self-host — same SDK).
-2. **Create a project**. Note the **Project ID** (top of dashboard).
-3. **Settings → Platforms → Add Platform → Web App**. Add your hostnames:
-   - `localhost`
-   - `your-app.vercel.app` (and any custom domain)
-4. **Auth → Settings**: enable **Email/Password** *or* **Magic URL**. The app
-   uses Magic URL — make sure that toggle is on.
+Vercel project → **Storage** → **Create Database** → **Postgres** → pick the
+region closest to your users → connect it to the project.
 
-## 2. Create the database + collection
+Vercel auto-injects `POSTGRES_URL` (pooled, for the API) and
+`POSTGRES_URL_NON_POOLING` (direct, for migrations) on every deploy. You don't
+have to set them by hand.
 
-1. **Databases → Create database**. Note the **Database ID**.
-2. Inside it, **Create collection** named `userState`. Note the **Collection ID**.
-3. Add a single attribute:
-   - **value** — String, size `1000000` (1 MB), required.
-4. **Collection → Settings → Permissions**:
-   - Document-level security: **enabled**.
-   - Collection permissions: **Create — Any authenticated user (`users`)**.
-   - The app sets per-document read/write/delete permissions for the owner
-     when creating each document, so no other roles are needed at the
-     collection level.
-
-## 3. Configure environment variables
-
-Set these on Vercel (Project → Settings → Environment Variables) and locally
-in `.env.local`. They must start with `VITE_` to be exposed to the browser.
-
-| Variable                          | Example                              |
-| --------------------------------- | ------------------------------------ |
-| `VITE_APPWRITE_ENDPOINT`          | `https://cloud.appwrite.io/v1`       |
-| `VITE_APPWRITE_PROJECT_ID`        | `66f0…`                              |
-| `VITE_APPWRITE_DATABASE_ID`       | `rhythm`                             |
-| `VITE_APPWRITE_COLLECTION_ID`     | `userState`                          |
-
-## 4. Deploy
+## 2. Run the schema migration
 
 ```bash
-git push origin claude/kind-bell-MsC7L
+# pull the auto-injected env vars down to your machine
+vercel env pull .env.local
+
+# apply migrations/0001_init.sql
+pnpm db:migrate
 ```
 
-Then on Vercel: import the repo → set the four env vars from step 3 → Deploy.
+This creates `users`, `sessions`, and `user_state`.
 
-## 5. Verify
+## 3. Deploy
 
-- Visit the deployed URL. You should see the sign-in screen.
-- Enter an email, receive a magic link, click it. The redirect lands on
-  `/auth/callback` which the app intercepts to create a session.
-- Log a check-in, sign out, sign back in — the entry should reappear.
+```bash
+git push origin main
+```
 
-## Security posture
+Vercel rebuilds. No env vars to configure manually.
 
-- **Auth, sessions, and password hashing** are Appwrite's responsibility.
-  Sessions are HTTP-only cookies set by Appwrite for your project's endpoint.
-- **Document permissions** are enforced server-side by Appwrite. Each
-  `userState` document is created with read/update/delete restricted to a
-  single user ID (`Role.user(userId)`) — no other user can read it even if
-  they know the document ID.
-- **localStorage stays the local cache** so the app works offline. Writes
-  go to Appwrite (debounced 600 ms) when online.
-- **No data migration needed.** When a user signs in for the first time,
-  any local entries are pushed up to their Appwrite account.
+## 4. Verify
 
-## Limits to be aware of
+- Visit the deployed URL — you'll see the sign-in screen.
+- Click **Create an account**, enter any email + password (≥8 chars).
+- You're signed in; log a check-in; sign out and back in — entry persists.
 
-- Magic-link emails come from Appwrite's transactional sender by default.
-  For production you'll want to point Appwrite at your own SMTP / Resend /
-  Postmark so links don't land in spam.
-- Lose access to the email = lose the account. Appwrite's account recovery
-  flow can be enabled if you need a fallback.
+## Auth model
+
+- Email + password. `scrypt` hashing (Node built-in, no native deps).
+- Sessions are 32-byte random tokens, SHA-256 hashed before storage.
+- Cookies: `HttpOnly`, `Secure` (in production), `SameSite=Lax`. 60-day TTL.
+- All `/api/state/<key>` calls require the cookie; the function pulls
+  `user_id` from the verified session, so users can only read/write their own
+  data.
+- `localStorage` stays the local cache so the app works offline; writes go to
+  Postgres (debounced 600 ms) when online.
+
+## Limits to know
+
+- No password recovery yet — losing your password means losing the account.
+  Add an email provider + `/api/auth/reset` if you need recovery.
+- No email verification yet. Anyone with a typo'd email still gets an account
+  on that typo. Fine for testing; tighten before public launch.
