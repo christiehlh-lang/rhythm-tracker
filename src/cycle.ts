@@ -160,3 +160,51 @@ export function moonPhase(date: Date): { phase: string; emoji: string } {
   const diff = (date.getTime() - knownNewMoon.getTime()) / (1000 * 60 * 60 * 24);
   return phases[Math.floor(((diff % synodic) / synodic) * 8)];
 }
+
+export function phaseForDate(
+  settings: CycleSettings | undefined | null,
+  date: Date,
+): { phase: PhaseInfo; cycleDay: number; cycleLength: number } | null {
+  const periods = normalizePeriods(settings);
+  if (!periods.length) return null;
+  const cycleLength = averageCycleLength(periods, settings?.cycleLength ?? 28);
+
+  // Find the most recent period start on or before `date`.
+  const past = periods
+    .map((p) => new Date(`${p.start}T00:00:00`))
+    .filter((d) => d.getTime() <= date.getTime())
+    .sort((a, b) => b.getTime() - a.getTime());
+  if (!past.length) return null;
+
+  const anchor = past[0];
+  const dayMs = 24 * 60 * 60 * 1000;
+  const diffDays = Math.floor((date.getTime() - anchor.getTime()) / dayMs);
+  const cycleDay = (diffDays % cycleLength) + 1;
+  const phases = phasesFor(cycleLength);
+  const phase =
+    phases.find((p) => cycleDay >= p.startDay && cycleDay <= p.endDay) ?? phases[phases.length - 1];
+  return { phase, cycleDay, cycleLength };
+}
+
+export function isWithinPeriod(periods: PeriodEntry[], date: Date): boolean {
+  const iso = date.toISOString().slice(0, 10);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  for (const p of periods) {
+    if (p.start > iso) continue;
+    // With an end date: standard range check.
+    if (p.end) {
+      if (iso <= p.end) return true;
+      continue;
+    }
+    // No end date and it's the most-recent (active) period — treat every
+    // day from start up to today as still bleeding.
+    if (iso <= todayStr) return true;
+  }
+  return false;
+}
+
+export function activePeriod(periods: PeriodEntry[]): PeriodEntry | null {
+  // The most recent period with no end date is considered active.
+  const sorted = [...periods].sort((a, b) => b.start.localeCompare(a.start));
+  return sorted.find((p) => !p.end) ?? null;
+}
