@@ -1,56 +1,76 @@
-const CACHE_NAME = 'your-rhythm-v1';
-const urlsToCache = [
-  '/',
-  '/manifest.json'
-];
+// Service worker tuned for an SPA that ships frequently.
+//
+// Strategy:
+//   - HTML (navigations) → network-first, fall back to cached shell.
+//     Prevents the classic "stale HTML references missing JS chunks"
+//     blank-page-after-deploy problem.
+//   - Hashed assets (/assets/*) → cache-first. They're immutable once shipped.
+//   - API calls → never cached.
+//
+// Bumping CACHE_VERSION invalidates everything on the next activate.
+const CACHE_VERSION = 'v3';
+const RUNTIME_CACHE = `rhythm-runtime-${CACHE_VERSION}`;
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('Opened cache');
-        return cache.addAll(urlsToCache);
-      })
-  );
-  self.skipWaiting();
-});
-
-self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request)
-      .then((response) => {
-        if (response) {
-          return response;
-        }
-        return fetch(event.request).then(
-          (response) => {
-            if (!response || response.status !== 200 || response.type !== 'basic') {
-              return response;
-            }
-            const responseToCache = response.clone();
-            caches.open(CACHE_NAME)
-              .then((cache) => {
-                cache.put(event.request, responseToCache);
-              });
-            return response;
-          }
-        );
-      })
-  );
+  // Activate as soon as the new SW is installed.
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener('activate', (event) => {
-  const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheWhitelist.indexOf(cacheName) === -1) {
-            return caches.delete(cacheName);
-          }
-        })
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys.filter((k) => k !== RUNTIME_CACHE).map((k) => caches.delete(k)),
       );
-    })
+      await self.clients.claim();
+    })(),
   );
-  self.clients.claim();
 });
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+
+  // Never cache API responses.
+  if (url.pathname.startsWith('/api/')) return;
+
+  // HTML navigations: network-first.
+  const isHTML =
+    req.mode === 'navigate' ||
+    req.headers.get('accept')?.includes('text/html');
+  if (isHTML) {
+    event.respondWith(networkFirst(req));
+    return;
+  }
+
+  // Hashed bundles + static assets: cache-first.
+  event.respondWith(cacheFirst(req));
+});
+
+async function networkFirst(req) {
+  try {
+    const res = await fetch(req);
+    if (res.ok) {
+      const cache = await caches.open(RUNTIME_CACHE);
+      cache.put(req, res.clone());
+    }
+    return res;
+  } catch {
+    const cache = await caches.open(RUNTIME_CACHE);
+    const cached = await cache.match(req);
+    return cached || cache.match('/');
+  }
+}
+
+async function cacheFirst(req) {
+  const cache = await caches.open(RUNTIME_CACHE);
+  const cached = await cache.match(req);
+  if (cached) return cached;
+  const res = await fetch(req);
+  if (res.ok && res.type === 'basic') cache.put(req, res.clone());
+  return res;
+}
