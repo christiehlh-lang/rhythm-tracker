@@ -57,8 +57,16 @@ export interface Task {
   timeSpent: number;
 }
 
+export interface PeriodEntry {
+  id: string;
+  start: string; // ISO date (YYYY-MM-DD)
+  end?: string; // ISO date, optional
+}
+
 export interface CycleSettings {
-  cycleStart: string | null;
+  /** @deprecated kept for migrating older saved data */
+  cycleStart?: string | null;
+  periods?: PeriodEntry[];
   cycleLength: number;
 }
 
