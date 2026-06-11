@@ -39,3 +39,8 @@ export async function extractPdfEvents(file: File): Promise<ExtractedEvent[]> {
   const lines = await pdfToLines(file);
   return eventsFromLines(lines);
 }
+
+export async function extractPdfText(file: File): Promise<string> {
+  const lines = await pdfToLines(file);
+  return lines.join("\n");
+}

@@ -50,6 +50,22 @@ Vercel rebuilds. No env vars to configure manually.
 - `localStorage` stays the local cache so the app works offline; writes go to
   Postgres (debounced 600 ms) when online.
 
+## Optional: AI shift extraction from PDFs
+
+The Calendar Integration tab can read a tabular schedule PDF (e.g. nursing
+rosters, multi-shift days) and pull each shift out as a separate event for
+you to review and edit. This uses Claude Haiku via the Anthropic API.
+
+To enable, set one Vercel env var (Production scope):
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Cost is roughly **$0.01 per PDF upload**. Without the key the app falls
+back to a local line-by-line regex extractor that works for itineraries
+but won't handle tabular rosters.
+
 ## Limits to know
 
 - No password recovery yet — losing your password means losing the account.

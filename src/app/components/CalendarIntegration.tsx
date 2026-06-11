@@ -44,17 +44,57 @@ export function CalendarIntegration() {
           allDay: p.allDay,
         }));
       } else if (name.endsWith(".pdf") || file.type === "application/pdf") {
-        setStatus({ kind: "busy", message: "Loading PDF parser…" });
-        const { extractPdfEvents } = await import("../../utils/pdf");
-        setStatus({ kind: "busy", message: "Extracting events from PDF…" });
-        const extracted = await extractPdfEvents(file);
+        setStatus({ kind: "busy", message: "Reading PDF…" });
+        const { extractPdfText, extractPdfEvents } = await import("../../utils/pdf");
+        const text = await extractPdfText(file);
+
+        let extracted: { title: string; start: string; end: string | null; allDay: boolean }[] = [];
+        setStatus({ kind: "busy", message: "Extracting shifts with AI…" });
+        try {
+          const res = await fetch("/api/extract-events", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({
+              text,
+              filename: file.name,
+              today: new Date().toISOString().slice(0, 10),
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            extracted = (data.events ?? []).map((e: any, i: number) => ({
+              title: e.title,
+              start: e.start,
+              end: e.end ?? null,
+              allDay: Boolean(e.allDay),
+              uid: `pdf-ai-${i}-${e.start}`,
+            })) as any;
+          }
+        } catch {
+          // fall through to heuristic
+        }
+
+        // Fallback: line-by-line heuristic if AI not configured or returned nothing.
+        if (!extracted.length) {
+          setStatus({ kind: "busy", message: "Falling back to local extractor…" });
+          const heur = await extractPdfEvents(file);
+          extracted = heur.map((h) => ({
+            title: h.title,
+            start: h.start,
+            end: h.end,
+            allDay: h.allDay,
+            uid: h.uid,
+          })) as any;
+        }
+
         if (!extracted.length) {
           throw new Error(
-            "Couldn't find any dated entries in this PDF. Try a clearer schedule or use an ICS export.",
+            "Couldn't find any events in this PDF. Try an ICS export or add events manually below.",
           );
         }
-        next = extracted.map((p) => ({
-          id: p.uid,
+        next = extracted.map((p: any, i) => ({
+          id: p.uid ?? `pdf-${i}-${p.start}`,
           source: "ics" as const,
           title: p.title,
           start: p.start,
@@ -125,8 +165,10 @@ export function CalendarIntegration() {
           <h3 className="text-lg">Upload schedule</h3>
         </div>
         <p className="text-sm text-muted-foreground">
-          Drop in a <code>.ics</code> file or a <code>.pdf</code> schedule. Everything is parsed
-          locally. New imports merge with existing events.
+          Drop in a <code>.ics</code> file or a <code>.pdf</code> schedule (rosters, itineraries).
+          PDFs are read locally and the text is sent to an AI extractor that pulls out the shifts
+          for you to review and edit before they hit your calendar. New imports merge with
+          existing events.
         </p>
         <label className="block">
           <input
