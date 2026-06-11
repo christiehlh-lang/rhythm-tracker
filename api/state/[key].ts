@@ -2,8 +2,8 @@
 // PUT  /api/state/<key>  body: any JSON  → { ok: true }
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { requireUser } from "../_lib/session";
-import { sql } from "../_lib/db";
+import { requireUser } from "../_lib/session.js";
+import { sql } from "../_lib/db.js";
 
 const ALLOWED_KEYS = new Set([
   "rhythm.dailyEntries.v1",

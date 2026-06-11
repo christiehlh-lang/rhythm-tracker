@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { sql } from "../_lib/db";
-import { verifyPassword } from "../_lib/password";
-import { createSession } from "../_lib/session";
+import { sql } from "../_lib/db.js";
+import { verifyPassword } from "../_lib/password.js";
+import { createSession } from "../_lib/session.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).end();

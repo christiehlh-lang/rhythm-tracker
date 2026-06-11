@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { randomUUID } from "node:crypto";
-import { sql } from "../_lib/db";
-import { hashPassword } from "../_lib/password";
-import { createSession } from "../_lib/session";
+import { sql } from "../_lib/db.js";
+import { hashPassword } from "../_lib/password.js";
+import { createSession } from "../_lib/session.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).end();

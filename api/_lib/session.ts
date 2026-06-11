@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from "node:crypto";
 import { parse, serialize } from "cookie";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { sql } from "./db";
+import { sql } from "./db.js";
 
 const COOKIE = "rhythm_session";
 const TTL_MS = 60 * 24 * 60 * 60 * 1000; // 60 days
